@@ -1,5 +1,6 @@
 #![feature(specialization)]
 #![deny(missing_docs)]
+#![doc(html_root_url = "https://docs.rs/ct-utils/0.0.1")]
 
 //! Crate containing compile time utilities.
 //!

@@ -1,7 +1,14 @@
 [package]
 name = "ct-utils"
+# Also update src/lib.rs when this value changes
 version = "0.0.1"
+
 authors = ["Bert Proesmans <bproesmans@hotmail.com>"]
+documentation = "https://docs.rs/ct-utils"
+repository = "https://github.com/Bert-Proesmans/ct-utils"
+readme = "README.md"
+license = "MIT"
+description = "CT-utils contains types and behaviours which resolve at compile time."
 
 [lib]
 name = "ct_utils"
