@@ -1,0 +1,10 @@
+[package]
+name = "ct-utils"
+version = "0.0.1"
+authors = ["Bert Proesmans <bproesmans@hotmail.com>"]
+
+[lib]
+name = "ct_utils"
+
+[dependencies]
+typenum = "1.10.0"
