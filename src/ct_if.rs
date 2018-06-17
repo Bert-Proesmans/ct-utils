@@ -30,7 +30,7 @@
 //! ```
 //!
 //! # Notes
-//! -   If the receiving type parameter is constrained, the generic [`CTIf`] cause
+//! -   If the receiving type parameter is constrained, the generic [`CTIf`] causes
 //!     compilation errors due to missing constraints.
 //!     You have to create your own specialized implementation of [`CTIf`], which is
 //!     made easy by utilizing the macro [`ctif_specialize`].
@@ -116,6 +116,37 @@ where
     type Path = OptionTrue;
 }
 
+/// Macro for specializing [`CTIf`].
+///
+/// If receiving associated types are constrained, the generic [`CTIf`] is not usable any more
+/// because there is no syntax carrying over these constraints accross the IF test.
+/// Solving this requires building a new trait similar to [`CTIf`] with constraints which are
+/// specific to your use case. These constraints will be applied to [`CTIf::Path`].
+///
+/// This macro helps in building that specialization. It creates a specialized trait and implements
+/// it for [`IfCheck`], the latter can be re-used accross specializations.
+/// Implementers only need to provide a new name for the trait and the required constraints.
+/// Provided outer attributes are applied to the newly created trait as well.
+///
+/// Using this specialized trait is analogue to using [`CTIf`] and [`IfCheck`].
+///
+/// # Example
+/// ```rust,ignore
+/// ctif_specialize {
+///     /// Optional doc-attribute explaining things about the special IF test.
+///     trait_name = "MySpecialIf",
+///     conditions = [Add<u32>, Mul<u32>]
+/// }
+///  ```
+///
+/// That macro call will expand to the following code.
+/// ```rust, ignore
+/// /// Optional doc-attribute explaining things about the special IF test.
+/// pub trait MySpecialIf<Condition, OptionTrue, OptionFalse> {
+///     type Result: CTBool;
+///     type Path: Add<u32> + Mul<u32>;
+/// }
+/// ```
 #[macro_export]
 macro_rules! ctif_specialize {
     (
