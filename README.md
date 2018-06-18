@@ -8,7 +8,7 @@ Include this crate as dependancy by inserting the following into your `Cargo.tom
 
 ```toml
 [dependencies]
-ct-utils = "1.10.0"
+ct-utils = "0.0.1"
 ```
 
 Inside your `lib.rs` or `main.rs` add the usage of this crate.
