@@ -1,6 +1,13 @@
-//! This module defines a cons list for types, [`CTCons`].
-//! The cons list can be queried and the result is calculated at compile time.
-//! See [`CTSized`] and [`CTOffset`] for more information about querying the cons list.
+//! This module defines two list types: [`TList`] and [`VList`].
+//! Both lists are a kind of cons list, but the T in [`TList`] stands for type
+//! and the V in [`VList`] stands for value.
+//!
+//! [`TList`] is intended as cons list for reasoning about types.
+//! [`VList`] is intended as heterogenous list, it's functionality is similar to the
+//! HCons type within the Frunk crate.
+//!
+//! These list types can be queried and query results are only calculated during compilation.
+//! See [`CTSized`], [`CTOffset`] and [`VPick`] for more information about querying.
 //!
 //! # Example
 //! ```rust
@@ -9,82 +16,64 @@
 //! use ct_utils::ct_cons::Cons;
 //!
 //! fn main() {
-//!     type ExampleOne = Cons<Cons<Cons<CTConsTerm, u8>, u32>, u64>;
+//!     type ExampleOne = Cons<Cons<Cons<TTerm, u8>, &'static str>, u64>;
 //!     //
-//!     type ExampleTwo = <<CTConsTerm as CTAppend<u8>>::Output as CTAppend<u32>>::Output;
+//!     type ExampleTwo = <<TTerm as TAppend<u8>>::Output as TAppend<u32>>::Output;
+//!     //
+//!     let vlist = VNil.push(0u8).push("Hello").push(0u64);
 //! }
 //! ```
 
-use ct_if::IfCheck;
 use std::marker::PhantomData;
 use std::ops::Add;
-use typenum::{U0, U1, U1024, Unsigned};
+use typenum::{U0, U1, Unsigned};
 
-/// This value is returned when querying [`CTOffset`] and the requested type is not
-/// found within the subject [`CTCons`].
-pub type CTConsOffsetInvalid = U1024;
-
-/// Represents a cons list where each new addition builds further onto the previous list.
-/// The previous list is at [`CTCons::Tail`] and [`CTConsTerm`] is used as bootstrapper
-/// to create the initial tail.
-/// The latest item is at [`CTCons::Head`].
+/// Represents a cons list for reasoning about types, their order and offsets.
 ///
-/// Use [`CTAppend`] to add new types to the cons list.
+/// Type lists are 0-sized. Look at [`VList`] if storage of data is also necessary.
 ///
 /// # Preconditions
-/// -   The cons list MUST NOT contain multiple items of the exact same type. This will result
-///     in wrong offsets.
-///     Type X and Type Y are considered exactly the same if their TypeId match. eg
+/// -   The item types are not specifically constrained, it's best to only push unique items
+///     into the list. That way all queries will always return the expected result.
+///     Type X is considered different from Type Y if their TypeId do not match. eg
 ///     `std::any::TypeId::of::<X> == std::any::TypeId::of::<Y>`
 ///     See [`std::any::TypeId`].
 ///
-pub trait CTCons {
-    /// The head of the list. This is exactly one item.
-    type Head: 'static;
-    /// This is the parent of the implemented type. The tail contains all items except the Head
-    /// of the implemented type.
-    type Tail: CTCons + 'static;
+pub trait TList {
+    /// The item that was most recently appended to the list.
+    type Head;
+    /// The parent list of the current one.
+    /// The parent list is exactly the same list as Self, but the Head item is removed.
+    type Tail: TList;
+}
+
+/// Represents a cons list for heterogenous storage of data.
+///
+/// A [`VList`] is almost functionally identical to [`TList`] except for the storage part.
+/// The items within this list are actual values.
+///
+pub trait VList {
+    /// The type of the item that was most recently appended to the list.
+    type Head;
+    /// The parent list of the current one.
+    /// The parent list is exactly the same list as Self, but the Head item is removed.
+    type Tail: VList;
 }
 
 #[doc(hidden)]
-// Trait used to count the amount of items within [`CTCons`], but due to constraints must be publicly
+// Trait used to count the amount of items within [`TList`], but due to constraints must be publicly
 // exported.
-// Use the trait [`CTSized`] to query the size of [`CTCons`].
+// Use the trait [`CTSized`] to query the size of [`TList`].
 pub trait CTCounter {
     /// A type defined by [`typenum`] which represents an unsigned integer.
     /// On this type is also addition with 1u implemented.
     ///
     /// # Note
     /// The only operation possible on this type is addition and creation of a corresponding value.
-    type Counter: Unsigned + Add<U1>;
+    type Monotone: Unsigned + Add<U1>;
 }
 
-/// Trait used to append items to compile time structure.
-///
-/// Cast the parent structure as [`CTAppend`] whith the addition as generic argument.
-/// If this trait is implemented for the parent structure, [`CTAppend::Output`] will
-/// hold the resulting type.
-///
-/// # Example
-/// ```rust
-/// # extern crate ct_utils;
-/// # use ct_utils::prelude::*;
-/// # fn main() {
-/// type ExampleTwo = <<CTConsTerm as CTAppend<u8>>::Output as CTAppend<u32>>::Output;
-/// # }
-/// ```
-pub trait CTAppend<X> {
-    /// The new compile time structure which consists of the implemented structure
-    /// with X as new item.
-    type Output: CTCons;
-}
-
-/// Trait used to measure the amount of items within compile time structures.
-///
-/// Cast the structure as [`CTSized`]. If this trait is implemented, you can query the
-/// size from [`CTSized::Size`].
-/// Alternatively a value can be constructed from the type representing the size, just
-/// call [`CTSized::size`].
+/// Trait for retrieving the amount of items within compile time structures.
 ///
 /// # Example
 /// ```rust
@@ -92,56 +81,56 @@ pub trait CTAppend<X> {
 /// # use ct_utils::prelude::*;
 /// # use ct_utils::ct_cons::Cons;
 /// # fn main() {
-/// let size = <Cons<Cons<Cons<CTConsTerm, u8>, u32>, u64> as CTSized>::size();
+/// let size = <Cons<Cons<Cons<TTerm, u8>, u32>, u64> as CTSized>::size();
 /// assert_eq!(size, 3);
 /// # }
 /// ```
 pub trait CTSized {
-    /// The size representation of the implemented compile time structure.
+    /// The amount of items within the implemented compile time structure.
+    /// The amount is encoded as a type, provided by [`typenum`].
     type Size: Unsigned;
 
-    /// Returns the amount of items added to the implemented compile time structure.
+    /// Returns the amount of items as a value.
     fn size() -> usize;
 }
 
-/// Trait used to calculate the 0-indexed offset of a specific type item within
-/// compile time structures.
-///
-/// Cast the structure as [`CTOffset`]. If this trait is implemented, you can query the
-/// offset of the requested item from [`CTOffset::Offset`].
-/// Alternatively a value can be constructed representing the offset, just call
-/// [`CTOffset::offset`].
-///
-/// ** Preferably use the [`CTOffsetExt`] trait! **
+/// Trait used to calculate the offset of a specific type item within compile time structures.
+/// The offset is 0-indexed which means that the 1st item will be at offset 0.
 ///
 /// # Note
-/// If the requested type cannot be found within the implemented structure,
-/// [`CTConsOffsetInvalid`] is returned.
+/// -   The compiler will throw an error if the requested type is not found within the
+///     compile time structure.
+/// -   This does NOT produce expected results if the list contains multiple items
+///     of identical types.
 ///
 /// # Example
 /// ```rust
 /// # extern crate ct_utils;
 /// # use ct_utils::prelude::*;
 /// # use ct_utils::ct_cons::Cons;
-/// # use ct_utils::ct_cons::CTOffset;
 /// # fn main() {
-/// let offset = <Cons<Cons<Cons<CTConsTerm, u8>, u32>, u64> as CTOffset<u64>>::offset();
+/// let offset = <Cons<Cons<Cons<TTerm, u8>, u32>, u64> as CTOffset<u64, _>>::offset();
 /// assert_eq!(offset, 2);    // Note: Offset is 0-indexed!
 /// # }
 /// ```
-pub trait CTOffset<Target> {
-    /// The offset representation of the type Target within the implemented compile time
-    /// structure.
-    ///
-    /// # Note
-    /// If the type was NOT found within the implemented ct structure, [`CTConsOffsetInvalid`]
-    /// is provided.
-    type Offset: Unsigned + Add<U1>;
+///
+/// The following example does not compile.
+/// ```rust,compile_fail
+/// # extern crate ct_utils;
+/// # use ct_utils::prelude::*;
+/// # fn main() {
+/// let offset = <Cons<Cons<Cons<TTerm, u8>, u32>, u64> as CTOffset<i64, _>>::offset();
+/// # }
+pub trait CTOffset<Target, Distance> {
+    /// The offset of the Target item within the implemented compile time structure.
+    /// The offset is encoded as a type, provided by [`typenum`].
+    type Offset: Unsigned;
 
-    /// Returns a value representing the offset within the compile time structure.
+    /// Returns the offset of Target as a value.
     fn offset() -> usize;
 }
 
+/*
 /// Trait used to calculate the offset of a specific type without upcasting to the
 /// [`CTOffset`] trait.
 ///
@@ -150,7 +139,7 @@ pub trait CTOffset<Target> {
 /// # extern crate ct_utils;
 /// # use ct_utils::prelude::*;
 /// # use ct_utils::ct_cons::Cons;
-/// type BigList = Cons<Cons<Cons<CTConsTerm, u8>, u32>, u64>;
+/// type BigList = Cons<Cons<Cons<TListTerm, u8>, u32>, u64>;
 /// # fn main() {
 /// let offset = BigList::offset_of::<u64>();
 /// assert_eq!(offset, 2);    // Note: Offset is 0-indexed!
@@ -163,114 +152,330 @@ pub trait CTOffsetExt {
     where
         Self: CTOffset<X>;
 }
+*/
 
-/// Termination type for [`Cons`].
+/// Trait used to append items to a [`TList`].
 ///
-/// Use this type to construct a new cons list ([`CTCons`]). See [`CTAppend`] for more
-/// information.
-pub enum CTConsTerm {}
+/// This trait is only applicable to [`TList`]. For the [`VList`] variant look at
+/// [`VAppend`].
+///
+/// # Example
+/// ```rust
+/// # extern crate ct_utils;
+/// # use ct_utils::prelude::*;
+/// # fn main() {
+/// type ExampleTwo = <<TTerm as TAppend<u8>>::Output as TAppend<u32>>::Output;
+/// # }
+/// ```
+pub trait TAppend<X>
+where
+    Self: TList,
+{
+    /// The new compile time structure with the new item appended.
+    type Output: TList;
+}
 
-/// Actual type used to carry cons list information.
+/// Trait used to append items to a [`VList`].
 ///
-/// This type is useful to create a new cons list in a compact syntax, like the example
-/// within the module documentation. Other than for creating new cons lists this structure
-/// isn't useful.
+/// This trait is only applicable to [`VList`]. For the [`TList`] variant look at
+/// [`TAppend`].
+///
+/// # Example
+/// ```rust
+/// # extern crate ct_utils;
+/// # use ct_utils::prelude::*;
+/// # fn main() {
+/// let mut big_int = 50u64;
+/// let vlist = VNil.push(0u32).push("hello").push(&mut big_int);
+/// # }
+/// ```
+pub trait VAppend<X>
+where
+    Self: VList,
+{
+    /// The new type of list after pushing the new value.
+    type Output: VList;
+
+    /// Returns a new list by pushing the provided item into the implemented list.
+    fn push(self, item: X) -> Self::Output;
+}
+
+/// Trait used to retrieve the value of a specified item from a [`VList`].
+///
+/// # Note
+/// -   This does NOT produce expected results if the list contains multiple items
+///     of identical types.
+/// -   Be wary of references you push into the list, each call to [`VPick::get`]
+///     and [`VPick::get_mut`] will return a reference to the item.
+///     Retrieving a mutable reference to an immutable reference will not allow to
+///     overwrite the referenced item, but does allow to replace the immutable
+///     reference with some other reference.
+///
+/// # Example
+/// ```rust
+/// # extern crate ct_utils;
+/// # use ct_utils::prelude::*;
+/// # fn main() {
+/// let vlist = VNil.push(0u32).push("hello");
+/// let the_string: &&str = vlist.get();
+/// println!("String is: {}", the_string);
+/// # }
+/// ```
+///
+/// The following example does not compile.
+/// ```rust,compile_fail
+///  # extern crate ct_utils;
+/// # use ct_utils::prelude::*;
+/// # fn main() {
+/// let vlist = VNill.push(0u32).push("hello");
+/// let the_string: &i64 = vlist.get();
+/// println!("String is: {}", the_string);
+/// # }
+/// ```
+pub trait VPick<Target, Distance>
+where
+    Self: VList,
+{
+    /// Retrieves a reference to the value, which is stored as Target type, within the current list.
+    fn get(&self) -> &Target;
+
+    /// Retrieves a mutable reference to the value, which is stored as Target type, within the current list.
+    fn get_mut(&mut self) -> &mut Target;
+}
+
+/// Termination type for [`TList`].
+///
+/// This type cannot be instantiated so it's only useful at type-level.
+pub enum TTerm {}
+
+/// Termination type for [`VList`].
+///
+/// This is a 0-sized type when instantiated.
+pub struct VNil;
+
+#[doc(hidden)]
+// Type used to help the compiler distinguish between implementation blocks.
+// Here effectively means that the head of the subject list IS the item we're looking for.
+pub enum Here {}
+
+#[doc(hidden)]
+// Type used to help the compiler distinguis between implementation blocks.
+// There effectively means that the item we're looking for is at a relative offset.
+// The relative offset is recursively encoded within this type. eg
+// `There<There<There<Here>>>`
+// indicates that 3 recursions must happen to find our target.
+pub struct There<T>(PhantomData<T>);
+
+/// Actual type used to represent type list information.
+///
+/// This type is useful to create a new [`TList`] with compact syntax, see the example
+/// within the module documentation.
+/// Other than for creating new lists this structure isn't useful.
 pub struct Cons<Tail, Head>
 where
-    Tail: CTCons,
+    Tail: TList,
 {
     _marker: PhantomData<(Tail, Head)>,
 }
 
-ctif_specialize!{
-    /// Specialized implementation of [`IfCheck`] to accomodate for the additional constraints
-    /// necessary on [`CTIf::Path`].
-    trait_name = CTIfOffset,
-    conditions = [Unsigned, Add<U1>]
-}
-
-impl CTCons for CTConsTerm {
-    type Head = ();
-    type Tail = CTConsTerm;
-}
-
-impl<X> CTAppend<X> for CTConsTerm
+/// Actual type used to represent and carry value list information.
+///
+/// This type also contains values for the types it has encoded within the signature.
+pub struct VCons<Tail, Head>
 where
-    X: 'static,
+    Tail: VList,
 {
-    type Output = Cons<CTConsTerm, X>;
+    head: Head,
+    tail: Tail,
 }
 
-impl CTCounter for CTConsTerm {
-    type Counter = U0;
+impl CTCounter for TTerm {
+    type Monotone = U0;
 }
 
-impl<Target> CTOffset<Target> for CTConsTerm {
-    type Offset = CTConsOffsetInvalid;
-
-    fn offset() -> usize {
-        Self::Offset::to_usize()
-    }
+impl CTCounter for VNil {
+    type Monotone = U0;
 }
 
-impl<Tail, Head> CTCons for Cons<Tail, Head>
+impl<Tail, Head> CTCounter for Cons<Tail, Head>
 where
-    Tail: CTCons + 'static,
-    Head: 'static,
+    Tail: TList + CTCounter,
+    <<Tail as CTCounter>::Monotone as Add<U1>>::Output: Unsigned + Add<U1>,
+{
+    type Monotone = <Tail::Monotone as Add<U1>>::Output;
+}
+
+impl<Tail, Head> CTCounter for VCons<Tail, Head>
+where
+    Tail: VList + CTCounter,
+    <<Tail as CTCounter>::Monotone as Add<U1>>::Output: Unsigned + Add<U1>,
+{
+    type Monotone = <Tail::Monotone as Add<U1>>::Output;
+}
+
+impl TList for TTerm {
+    type Head = ();
+    type Tail = TTerm;
+}
+
+impl VList for VNil {
+    type Head = ();
+    type Tail = VNil;
+}
+
+impl<Tail, Head> TList for Cons<Tail, Head>
+where
+    Tail: TList,
 {
     type Head = Head;
     type Tail = Tail;
 }
 
-impl<X, Tail, Head> CTAppend<X> for Cons<Tail, Head>
+impl<Tail, Head> VList for VCons<Tail, Head>
 where
-    X: 'static,
-    Tail: CTCons + 'static,
-    Head: 'static,
+    Tail: VList,
 {
-    type Output = Cons<Cons<Tail, Head>, X>;
-}
-
-impl<Tail, Head> CTCounter for Cons<Tail, Head>
-where
-    Tail: CTCounter + CTCons,
-    <<Tail as CTCounter>::Counter as Add<U1>>::Output: Unsigned + Add<U1>,
-{
-    type Counter = <Tail::Counter as Add<U1>>::Output;
+    type Head = Head;
+    type Tail = Tail;
 }
 
 impl<Tail, Head> CTSized for Cons<Tail, Head>
 where
-    Tail: CTCons,
-    Self: CTCounter,
+    Tail: TList + CTCounter,
+    <<Tail as CTCounter>::Monotone as Add<U1>>::Output: Unsigned,
 {
-    type Size = <Self as CTCounter>::Counter;
+    type Size = <Tail::Monotone as Add<U1>>::Output;
 
     fn size() -> usize {
         Self::Size::to_usize()
     }
 }
 
-impl<Target, Tail, Head> CTOffset<Target> for Cons<Tail, Head>
+impl<Tail, Head> CTSized for VCons<Tail, Head>
 where
-    Tail: CTCons + CTOffset<Target> + CTCounter,
+    Tail: VList + CTCounter,
+    <<Tail as CTCounter>::Monotone as Add<U1>>::Output: Unsigned,
 {
-    type Offset = <IfCheck<Head> as CTIfOffset<Target, Tail::Counter, Tail::Offset>>::Path;
+    type Size = <Tail::Monotone as Add<U1>>::Output;
+
+    fn size() -> usize {
+        Self::Size::to_usize()
+    }
+}
+
+impl<Tail, Target> CTOffset<Target, Here> for Cons<Tail, Target>
+where
+    Tail: TList + CTCounter,
+{
+    type Offset = Tail::Monotone;
 
     fn offset() -> usize {
         Self::Offset::to_usize()
     }
 }
 
-impl<C> CTOffsetExt for C
+impl<Tail, Head, Target, TailDistance> CTOffset<Target, There<TailDistance>> for Cons<Tail, Head>
 where
-    C: CTCons,
+    Tail: TList + CTCounter + CTOffset<Target, TailDistance>,
 {
-    fn offset_of<X>() -> usize
-    where
-        C: CTOffset<X>,
-    {
-        C::offset()
+    type Offset = Tail::Offset;
+
+    fn offset() -> usize {
+        Self::Offset::to_usize()
+    }
+}
+
+impl<Tail, Target> CTOffset<Target, Here> for VCons<Tail, Target>
+where
+    Tail: VList + CTCounter,
+{
+    type Offset = Tail::Monotone;
+
+    fn offset() -> usize {
+        Self::Offset::to_usize()
+    }
+}
+
+impl<Tail, Head, Target, TailDistance> CTOffset<Target, There<TailDistance>> for VCons<Tail, Head>
+where
+    Tail: VList + CTCounter + CTOffset<Target, TailDistance>,
+{
+    type Offset = Tail::Offset;
+
+    fn offset() -> usize {
+        Self::Offset::to_usize()
+    }
+}
+
+impl<X> TAppend<X> for TTerm
+where
+    Cons<TTerm, X>: TList,
+{
+    type Output = Cons<TTerm, X>;
+}
+
+impl<Tail, Head, X> TAppend<X> for Cons<Tail, Head>
+where
+    Tail: TList,
+    Cons<Cons<Tail, Head>, X>: TList,
+{
+    type Output = Cons<Cons<Tail, Head>, X>;
+}
+
+impl<X> VAppend<X> for VNil
+where
+    VCons<VNil, X>: VList,
+{
+    type Output = VCons<VNil, X>;
+
+    fn push(self, item: X) -> Self::Output {
+        VCons {
+            head: item,
+            tail: self,
+        }
+    }
+}
+
+impl<Tail, Head, X> VAppend<X> for VCons<Tail, Head>
+where
+    Tail: VList,
+    VCons<VCons<Tail, Head>, X>: VList,
+{
+    type Output = VCons<VCons<Tail, Head>, X>;
+
+    fn push(self, item: X) -> Self::Output {
+        VCons {
+            head: item,
+            tail: self,
+        }
+    }
+}
+
+impl<Tail, Target> VPick<Target, Here> for VCons<Tail, Target>
+where
+    Self: VList,
+    Tail: VList,
+{
+    fn get(&self) -> &Target {
+        &self.head
+    }
+
+    fn get_mut(&mut self) -> &mut Target {
+        &mut self.head
+    }
+}
+
+impl<Tail, Head, Target, TailDistance> VPick<Target, There<TailDistance>> for VCons<Tail, Head>
+where
+    Self: VList,
+    Tail: VList + VPick<Target, TailDistance>,
+{
+    fn get(&self) -> &Target {
+        self.tail.get()
+    }
+
+    fn get_mut(&mut self) -> &mut Target {
+        self.tail.get_mut()
     }
 }
 
@@ -278,50 +483,114 @@ where
 mod test {
     use super::*;
 
-    type Single = Cons<CTConsTerm, i32>;
-    type Middle = Cons<Cons<Cons<CTConsTerm, i32>, u32>, f32>;
-    type Big = Cons<Cons<Cons<Cons<Cons<CTConsTerm, i32>, u32>, f32>, i64>, usize>;
+    type TSingle = Cons<TTerm, i32>;
+    type TMiddle = Cons<Cons<Cons<TTerm, i32>, u32>, f32>;
+    type TBig = Cons<Cons<Cons<Cons<Cons<TTerm, i32>, u32>, f32>, i64>, usize>;
+
+    lazy_static! {
+        static ref VSINGLE: VCons<VNil, i32> = VNil.push(0i32);
+        static ref VMIDDLE: VCons<VCons<VCons<VNil, i32>, u32>, f32> =
+            { VNil.push(0i32).push(0u32).push(0f32) };
+        static ref VBIG: VCons<VCons<VCons<VCons<VCons<VNil, i32>, u32>, f32>, i64>, usize> = {
+            VNil.push(0i32)
+                .push(0u32)
+                .push(0f32)
+                .push(0i64)
+                .push(0usize)
+        };
+    }
+
+    fn type_offset_for<List, X, Distance>() -> usize
+    where
+        List: TList + CTOffset<X, Distance>,
+    {
+        List::offset()
+    }
+
+    fn value_offset_for<List, X, Distance>(_list: &List) -> usize
+    where
+        List: VList + CTOffset<X, Distance>,
+    {
+        List::offset()
+    }
+
+    fn value_size_for<List>(_list: &List) -> usize
+    where
+        List: VList + CTSized,
+    {
+        List::size()
+    }
 
     #[test]
-    fn sized_single() {
-        let size = Single::size();
+    fn type_sized_single() {
+        let size = TSingle::size();
         assert_eq!(size, 1);
     }
 
     #[test]
-    fn sized_big() {
-        let size = Big::size();
-        assert_eq!(size, 5);
-    }
-
-    fn offset_for<CTCons, Target>() -> usize
-    where
-        CTCons: CTOffset<Target>,
-    {
-        CTCons::offset()
+    fn value_sized_single() {
+        let size = value_size_for(&*VSINGLE);
+        assert_eq!(size, 1);
     }
 
     #[test]
-    fn offset_first() {
-        let offset = offset_for::<Single, i32>();
+    fn type_sized_big() {
+        let size = TBig::size();
+        assert_eq!(size, 5);
+    }
+
+    #[test]
+    fn value_sized_big() {
+        let size = value_size_for(&*VBIG);
+        assert_eq!(size, 5);
+    }
+
+    #[test]
+    fn value_offset_first() {
+        let offset = type_offset_for::<TSingle, i32, _>();
         assert_eq!(offset, 0);
     }
 
     #[test]
-    fn offset_middle() {
-        let offset = offset_for::<Middle, u32>();
+    fn type_offset_first() {
+        let offset = value_offset_for::<_, i32, _>(&*VSINGLE);
+        assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn type_offset_middle() {
+        let offset = type_offset_for::<TMiddle, u32, _>();
         assert_eq!(offset, 1);
     }
 
     #[test]
-    fn offset_end() {
-        let offset = offset_for::<Big, usize>();
+    fn value_offset_middle() {
+        let offset = value_offset_for::<_, u32, _>(&*VMIDDLE);
+        assert_eq!(offset, 1);
+    }
+
+    #[test]
+    fn type_offset_end() {
+        let offset = type_offset_for::<TBig, usize, _>();
         assert_eq!(offset, 4);
     }
 
     #[test]
-    fn offset_unknown() {
-        let offset = offset_for::<Single, f32>();
-        assert_eq!(offset, CTConsOffsetInvalid::to_usize());
+    fn value_offset_end() {
+        let offset = value_offset_for::<_, usize, _>(&*VBIG);
+        assert_eq!(offset, 4);
+    }
+
+    #[test]
+    fn value_replace() {
+        let mut list = VNil.push(0u32).push(0i8).push("Hello");
+        *list.get_mut() = 10i8;
+        *list.get_mut() = "Hello World";
+
+        let number: i8 = *list.get();
+        assert_eq!(number, 10i8);
+
+        let string: &str = *list.get();
+        assert_eq!(string, "Hello World");
     }
 }

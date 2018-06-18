@@ -15,3 +15,6 @@ name = "ct_utils"
 
 [dependencies]
 typenum = "1.10.0"
+
+[dev-dependencies]
+lazy_static = "1.0"

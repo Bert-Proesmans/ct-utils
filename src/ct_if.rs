@@ -19,7 +19,7 @@
 //!
 //! // Trait to negate the signed-ness of a specific integer.
 //! trait DeSignature<Target> {
-//!     type Result: ?Sized;
+//!     type Result: ?CTSized;
 //! }
 //!
 //! impl<Target> DeSignature<Target> for i32 {
@@ -56,14 +56,14 @@ pub trait CTBool {
 /// is constrained. See [`ctif_specialize`] to create such a specialized version.
 pub trait CTIf<Condition, OptionTrue, OptionFalse>
 where
-    OptionTrue: 'static + ?Sized,
-    OptionFalse: 'static + ?Sized,
+    OptionTrue: 'static + ?CTSized,
+    OptionFalse: 'static + ?CTSized,
 {
     /// Type representing how the condition on the implemented type matches.
     type Result: CTBool;
     /// Type which holds either of the two generic option arguments, depending on how the
     /// condition matches.
-    type Path: 'static + ?Sized;
+    type Path: 'static + ?CTSized;
 }
 
 /// Type representing a FALSE value.
@@ -100,8 +100,8 @@ impl CTBool for CTTrue {
 
 impl<X, CondFail, OptionTrue, OptionFalse> CTIf<CondFail, OptionTrue, OptionFalse> for IfCheck<X>
 where
-    OptionTrue: 'static + ?Sized,
-    OptionFalse: 'static + ?Sized,
+    OptionTrue: 'static + ?CTSized,
+    OptionFalse: 'static + ?CTSized,
 {
     default type Result = CTFalse;
     default type Path = OptionFalse;
@@ -109,8 +109,8 @@ where
 
 impl<X, OptionTrue, OptionFalse> CTIf<X, OptionTrue, OptionFalse> for IfCheck<X>
 where
-    OptionTrue: 'static + ?Sized,
-    OptionFalse: 'static + ?Sized,
+    OptionTrue: 'static + ?CTSized,
+    OptionFalse: 'static + ?CTSized,
 {
     type Result = CTTrue;
     type Path = OptionTrue;
